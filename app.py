@@ -1,57 +1,102 @@
 import streamlit as st
-import cv2
 import numpy as np
 from PIL import Image
 import easyocr
-from utils import detect_document
 from pdf2image import convert_from_bytes
 
-st.set_page_config(page_title="OCR Document Categorizer")
+from utils import detect_document, categorize_text
+
+st.set_page_config(page_title="OCR Document Categorizer", layout="centered")
 
 st.title("📄 OCR Document Categorizer")
 
 st.markdown("""
-This application detects a document inside an image, crops it automatically,
-extracts editable text using OCR, and categorizes the content into sections.
+This application automatically:
+1. Detects and crops a document inside an image or PDF  
+2. Extracts editable text using OCR  
+3. Categorizes the extracted content into **user-defined headings**
 """)
 
+# ======================
+# Upload
+# ======================
 uploaded_file = st.file_uploader(
     "Upload a document (Image or PDF)",
     type=["jpg", "png", "jpeg", "pdf"]
 )
+
 if uploaded_file:
+    # ======================
+    # Load image
+    # ======================
     if uploaded_file.type == "application/pdf":
         pages = convert_from_bytes(uploaded_file.read())
-        image = pages[0]  # première page
+        image = pages[0]  # first page only
     else:
-        image = Image.open(uploaded_file)
+        image = Image.open(uploaded_file).convert("RGB")
 
     image_np = np.array(image)
 
-    st.subheader("Original Image")
+    st.subheader("📷 Original Image")
     st.image(image, use_column_width=True)
 
-    if st.button("Process Document"):
-        cropped = detect_document(image_np)
+    # ======================
+    # Category input
+    # ======================
+    st.subheader("🗂 Categorization Settings")
 
-        st.subheader("Detected Document")
+    default_categories = [
+        "Header / Title",
+        "Dates",
+        "Names / Entities",
+        "Numbers / Amounts",
+        "Main Content"
+    ]
+
+    categories_input = st.text_area(
+        "Define categories (one per line)",
+        "\n".join(default_categories),
+        height=120
+    )
+
+    user_categories = [
+        c.strip() for c in categories_input.split("\n") if c.strip()
+    ]
+
+    # ======================
+    # Process
+    # ======================
+    if st.button("🚀 Process Document"):
+        with st.spinner("Detecting document..."):
+            cropped = detect_document(image_np)
+
+        st.subheader("📄 Detected Document")
         st.image(cropped, use_column_width=True)
 
-        reader = easyocr.Reader(['en'], gpu=False)
-        results = reader.readtext(cropped)
+        # OCR
+        with st.spinner("Running OCR..."):
+            reader = easyocr.Reader(['en'], gpu=False)
+            results = reader.readtext(cropped)
 
-        text = " ".join([res[1] for res in results])
+        extracted_text = "\n".join([res[1] for res in results])
 
-        st.subheader("Extracted Text")
-        st.text_area("Editable text", text, height=200)
+        st.subheader("📝 Extracted Text (Editable)")
+        st.text_area(
+            "OCR Result",
+            extracted_text,
+            height=250
+        )
 
-        st.subheader("Categorized Content")
-        lines = text.split(".")
-        categorized = {
-            "Title": lines[0] if lines else "",
-            "Content": ". ".join(lines[1:4]),
-            "Summary": ". ".join(lines[-2:])
-        }
+        # Categorization
+        with st.spinner("Categorizing text..."):
+            categorized = categorize_text(extracted_text, user_categories)
 
-        for k, v in categorized.items():
-            st.markdown(f"**{k}:** {v}")
+        st.subheader("📌 Categorized Content")
+
+        for category, content in categorized.items():
+            st.markdown(f"### {category}")
+            if content:
+                for line in content:
+                    st.markdown(f"- {line}")
+            else:
+                st.markdown("_No content detected_")
