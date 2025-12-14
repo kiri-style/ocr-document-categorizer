@@ -26,7 +26,7 @@ if uploaded_file:
     else:
         image = Image.open(uploaded_file)
 
-image_np = np.array(image)
+    image_np = np.array(image)
 
     st.subheader("Original Image")
     st.image(image, use_column_width=True)
